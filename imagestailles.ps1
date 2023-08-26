@@ -1,15 +1,32 @@
 function Show-Spinner {
-    $spinnerChars = '|/-\'
-    while ($true) {
-        foreach ($char in $spinnerChars) {
-            Write-Host "`b$char" -NoNewline -ForegroundColor Yellow
+    while (-not $global:StopSpinner) {
+        foreach ($char in '|/-\') {
+            Write-Host "`r$char" -NoNewline
             Start-Sleep -Milliseconds 100
         }
+    }
+    Write-Host "`r " -NoNewline # Clear the spinner at the end
+}
+
+function Start-Spinner {
+    $global:StopSpinner = $false
+    $global:runspace = [runspacefactory]::CreateRunspace()
+    $global:runspace.Open()
+    $powershell = [powershell]::Create().AddScript({ Show-Spinner })
+    $powershell.Runspace = $global:runspace
+    $handle = $powershell.BeginInvoke()
+}
+
+function Stop-Spinner {
+    $global:StopSpinner = $true
+    if ($global:runspace) {
+        $global:runspace.Close()
     }
 }
 
 function Get-ExternalDrives {
-    return Get-Volume | Where-Object { $_.DriveType -eq 'Removable' }
+    # return Get-Volume  | Where-Object { $_.DriveType -eq 'Removable' -and $_.FileSystem -eq 'FAT32' }
+    return Get-Volume
 }
 
 function Show-ExternalDrives {
@@ -22,6 +39,13 @@ function Show-ExternalDrives {
 
 function Grant-PermissionsToDrive {
     param($driveLetter)
+    
+    # Demande de confirmation
+    $confirmChangePermission = Read-Host "Etes-vous sûr de vouloir changer les permissions de ${driveLetter}? (Oui/Non)"
+    if ($confirmChangePermission -ne 'Oui') {
+        Write-Host "Modification des permissions annulée par l'utilisateur." -ForegroundColor Yellow
+        return
+    }
 
     if (-not (Get-Module -ListAvailable -Name NTFSSecurity)) {
         Write-Host "Le module NTFSSecurity est nécessaire pour continuer. Installation en cours..." -ForegroundColor Yellow
@@ -29,7 +53,7 @@ function Grant-PermissionsToDrive {
 
         if (-not (Get-Module -ListAvailable -Name NTFSSecurity)) {
             Write-Host "Echec de l'installation du module NTFSSecurity. Exécution interrompue." -ForegroundColor Red
-            exit
+            return
         }
     }
 
@@ -39,13 +63,8 @@ function Grant-PermissionsToDrive {
     }
     catch {
         Write-Host "Erreur lors de l'octroi des permissions. Exécution interrompue." -ForegroundColor Red
-        exit
+        return
     }
-
-    # Arrêtez le spinner une fois l'opération terminée
-    Stop-Job $global:spinnerJob
-    Receive-Job $global:spinnerJob
-    Remove-Job $global:spinnerJob
 }
 
 function Select-Drive {
@@ -78,36 +97,31 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     }
 }
 
-# Démarrez le spinner
-$global:spinnerJob = Start-Job -ScriptBlock { Show-Spinner }
 Grant-PermissionsToDrive -driveLetter $selectedDrive
 
-# Continuez avec le reste du script...
 # Récupération des fichiers, copie des fichiers, etc.
-
-
-# Reste de la logique après l'octroi des permissions
 $drivePath = "${selectedDrive}:"
 
 # Emplacement du fichier de log
 $logFile = "log_$(Get-Date -Format 'yyyyMMdd_HHmmss').txt"
-$imageExtensions = @("*.jpg", "*.jpeg", "*.png", "*.gif")
+$imageExtensions = @("*.jpg", "*.jpeg")
 
 # Enregistrement de l'heure de début
 $startDateTime = Get-Date
 
 Write-Host "Récupération des fichiers en cours..." -ForegroundColor Yellow
-Show-Spinner -duration 3
+Start-Spinner
 
 $destinationFolder = "${selectedDrive}:\UniqueFiles"
 
-$files = Get-ChildItem -Recurse $drivePath -Include $imageExtensions | Where-Object { $_.FullName -notlike "${destinationFolder}\*" }
+$files = Get-ChildItem -Recurse $drivePath -Include $imageExtensions -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notlike "${destinationFolder}\*" }
 
 $totalFilesBeforeHashing = $files.Count
 $totalSizeBeforeHashing = ($files | Measure-Object -Property Length -Sum).Sum / 1MB
+Stop-Spinner
 
 Write-Host "Filtrage des fichiers pour ne garder que les uniques..." -ForegroundColor Yellow
-Show-Spinner -duration 3
+Start-Spinner
 
 $hashTable = @{}
 $uniqueFiles = $files | Where-Object {
@@ -126,6 +140,7 @@ $uniqueFiles = $files | Where-Object {
 
 $totalFilesAfterHashing = $uniqueFiles.Count
 $totalSizeAfterHashing = ($uniqueFiles | Measure-Object -Property Length -Sum).Sum / 1MB
+Stop-Spinner
 
 # Vérification de l'espace disque avant de commencer la copie
 $totalSizeRequired = ($uniqueFiles | Measure-Object -Property Length -Sum).Sum
@@ -137,7 +152,7 @@ if ($totalSizeRequired -gt $freeSpaceOnDrive) {
 }
 
 # Demandez à l'utilisateur s'il souhaite copier les fichiers uniques
-$choice = Read-Host "Voulez-vous copier tous les fichiers uniques vers un nouveau dossier ? (Oui/Non)"
+$choice = Read-Host "Vous êtes sur le point de copier $totalFilesAfterHashing fichiers pour un total de $totalSizeAfterHashing MB vers $destinationFolder. Etes-vous sûr? (Oui/Non)"
 
 if ($choice -eq 'Oui') {
     Write-Host "Création du dossier destination..." -ForegroundColor Yellow
@@ -154,7 +169,7 @@ if ($choice -eq 'Oui') {
     }
 
     Write-Host "Copie des fichiers en cours..." -ForegroundColor Yellow
-    Show-Spinner -duration 3
+    Start-Spinner
 
     foreach ($file in $uniqueFiles) {
         $destinationPath = Join-Path $destinationFolder $file.Name
@@ -165,7 +180,7 @@ if ($choice -eq 'Oui') {
             Write-Host "Erreur lors de la copie du fichier $($file.FullName). Ce fichier sera ignoré." -ForegroundColor Yellow
         }
     }
-
+    Stop-Spinner
     $copyMessage = "Les fichiers uniques ont été copiés dans $destinationFolder"
     Write-Host $copyMessage -ForegroundColor Green
 }
@@ -173,6 +188,9 @@ else {
     $copyMessage = "Les fichiers n'ont pas été copiés."
     Write-Host $copyMessage -ForegroundColor Red
 }
+
+$logMessage = "Ecriture du fichier de log en cours..."
+Write-Host $logMessage -ForegroundColor Magenta
 
 # Enregistrement de l'heure de fin
 $endDateTime = Get-Date
@@ -200,3 +218,6 @@ Add-Content -Path $logFile -Value $logContent
 
 # Affichage des résultats
 Write-Output $logContent
+
+$endMessage = "Fin du script. Bye !"
+Write-Host $endMessage -ForegroundColor Green
