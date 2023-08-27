@@ -1,28 +1,25 @@
-function Show-Spinner {
-    while (-not $global:StopSpinner) {
-        foreach ($char in '|/-\') {
-            Write-Host "`r$char" -NoNewline
-            Start-Sleep -Milliseconds 100
-        }
-    }
-    Write-Host "`r " -NoNewline # Clear the spinner at the end
-}
+# function Show-Spinner {
+#     while (-not $global:StopSpinner) {
+#         foreach ($char in '|/-\') {
+#             Write-Host "`r$char" -NoNewline
+#             Start-Sleep -Milliseconds 100
+#         }
+#     }
+#     Write-Host "`r " -NoNewline # Clear the spinner at the end
+# }
 
-function Start-Spinner {
-    $global:StopSpinner = $false
-    $global:runspace = [runspacefactory]::CreateRunspace()
-    $global:runspace.Open()
-    $powershell = [powershell]::Create().AddScript({ Show-Spinner })
-    $powershell.Runspace = $global:runspace
-    $handle = $powershell.BeginInvoke()
-}
+# function Start-Spinner {
+#     $global:runspace = [runspacefactory]::CreateRunspace()
+#     $global:runspace.Open()
+#     $powershell = [powershell]::Create().AddScript({ Show-Spinner })
+#     $powershell.Runspace = $global:runspace
+# }
 
-function Stop-Spinner {
-    $global:StopSpinner = $true
-    if ($global:runspace) {
-        $global:runspace.Close()
-    }
-}
+# function Stop-Spinner {
+#     if ($global:runspace) {
+#         $global:runspace.Close()
+#     }
+# }
 
 function Get-ExternalDrives {
     # return Get-Volume  | Where-Object { $_.DriveType -eq 'Removable' -and $_.FileSystem -eq 'FAT32' }
@@ -92,36 +89,85 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     Write-Host "Il est possible que certaines opérations échouent en raison de restrictions d'accès." -ForegroundColor Yellow
     $response = Read-Host "Souhaitez-vous continuer malgré cela? (Oui/Non)"
     if ($response -ne 'Oui') {
-        Write-Host "Exécution interrompue." -ForegroundColor Red
+        Write-Host "Exécution interrompue de modification des privilèges." -ForegroundColor Red
         exit
+    }
+}else{
+    Write-Host "Ce script est exécuté avec des privilèges d'administrateur." -ForegroundColor Green
+    # demander à l'utilisateur s'il souhaite changer les permissions du disque
+    $response = Read-Host "Souhaitez-vous changer les permissions du disque ${selectedDrive}? (Oui/Non)"
+    if ($response -eq 'Oui') {
+        Write-Host "Changement des permissions du disque ${selectedDrive} en cours..." -ForegroundColor Yellow
+        Grant-PermissionsToDrive -driveLetter $selectedDrive
+        Write-Host "Les permissions du disque ${selectedDrive} ont été modifiées." -ForegroundColor Green
+    }else{
+        Write-Host "Les permissions du disque ${selectedDrive} n'ont pas été modifiées." -ForegroundColor Yellow
     }
 }
 
-Grant-PermissionsToDrive -driveLetter $selectedDrive
-
-# Récupération des fichiers, copie des fichiers, etc.
-$drivePath = "${selectedDrive}:"
-
 # Emplacement du fichier de log
 $logFile = "log_$(Get-Date -Format 'yyyyMMdd_HHmmss').txt"
+
+# Définition des variables pour les extensions de fichiers
+$choixExtensions = @()
 $imageExtensions = @("*.jpg", "*.jpeg")
+$videoExtensions = @(".3g2", ".3gp", ".amv", ".asf", ".avi", ".drc", ".f4v", ".flv", ".m2v", ".m4p", ".m4v", ".mkv", ".mng", ".mov", ".mp2", ".mp4", ".mpe", ".mpeg", ".mpg", ".mpv", ".mxf", ".nsv", ".ogg", ".ogv", ".qt", ".rm", ".rmvb", ".roq", ".svi", ".vob", ".webm", ".wmv", ".yuv")
+$audioExtensions = @(".aif", ".cda", ".mid", ".midi", ".mp3", ".mpa", ".ogg", ".wav", ".wma", ".wpl", ".m3u", ".flac", ".alac", ".aac", ".ac3", ".m4a", ".m4p", ".m4b", ".mogg", ".opus", ".ra", ".rm", ".raw", ".sln", ".tta", ".voc", ".vox", ".wv", ".8svx", ".webm")
+#$imageExtensions = @(".ai", ".bmp", ".gif", ".ico", ".jpeg", ".jpg", ".png", ".ps", ".psd", ".svg", ".tif", ".tiff", ".cr2", ".nef", ".orf", ".sr2", ".raw", ".arw", ".crw", ".nrw", ".k25", ".heif", ".heic", ".indd", ".ai", ".eps", ".pdf", ".xrf", ".webp")
+$documentExtensions = @(".doc", ".docx", ".pdf", ".txt", ".odt", ".ods", ".odp", ".xlsx", ".xls", ".ppt", ".pptx", ".rtf", ".csv", ".epub", ".mobi")
+# Définition de la variable pour le dossier
+$nomDossier = ""
+
+# Permettre à l'utilisateur de choisir entre images videos ou audios
+$choice = Read-Host "Quel type de fichiers souhaitez-vous copier? (Images(I)/Videos(V)/Audios(A)/Document(D)/Tous(T))"
+switch ($choice) {
+    'I' {
+        $choixExtensions = $imageExtensions
+        $nomDossier = "Images"
+        $destinationFolder = "${selectedDrive}:\UniqueFiles$nomDossier"
+        break
+    }
+    'V' {
+        $choixExtensions = $videoExtensions
+        $nomDossier = "Videos"
+        $destinationFolder = "${selectedDrive}:\UniqueFiles$nomDossier"
+        break
+    }
+    'A' {
+        $choixExtensions = $audioExtensions
+        $nomDossier = "Audios"
+        $destinationFolder = "${selectedDrive}:\UniqueFiles$nomDossier"
+        break
+    }
+    'D' {
+        $choixExtensions = $documentExtensions
+        $nomDossier = "Documents"
+        $destinationFolder = "${selectedDrive}:\UniqueFiles$nomDossier"
+        break
+    }
+    'T' {
+        $choixExtensions = $imageExtensions + $videoExtensions + $audioExtensions
+        $nomDossier = "All"
+        $destinationFolder = "${selectedDrive}:\UniqueFiles$nomDossier"
+        break
+    }
+    default {
+        Write-Host "Choix invalide. Exécution interrompue. END..." -ForegroundColor Red
+        exit
+    }
+}
 
 # Enregistrement de l'heure de début
 $startDateTime = Get-Date
 
 Write-Host "Récupération des fichiers en cours..." -ForegroundColor Yellow
-Start-Spinner
 
-$destinationFolder = "${selectedDrive}:\UniqueFiles"
-
-$files = Get-ChildItem -Recurse $drivePath -Include $imageExtensions -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notlike "${destinationFolder}\*" }
+$files = Get-ChildItem -Recurse "${selectedDrive}:" -Include $choixExtensions -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notlike "${destinationFolder}\*" }
 
 $totalFilesBeforeHashing = $files.Count
 $totalSizeBeforeHashing = ($files | Measure-Object -Property Length -Sum).Sum / 1MB
-Stop-Spinner
 
 Write-Host "Filtrage des fichiers pour ne garder que les uniques..." -ForegroundColor Yellow
-Start-Spinner
 
 $hashTable = @{}
 $uniqueFiles = $files | Where-Object {
@@ -140,7 +186,13 @@ $uniqueFiles = $files | Where-Object {
 
 $totalFilesAfterHashing = $uniqueFiles.Count
 $totalSizeAfterHashing = ($uniqueFiles | Measure-Object -Property Length -Sum).Sum / 1MB
-Stop-Spinner
+
+# Demander à l'utilisateur si il souhaite changer le disque de destination
+$choice = Read-Host "Souhaitez-vous changer le disque de destination? (Oui/Non)"
+if ($choice -eq 'Oui') {
+    $selectedDrive = Select-Drive
+    $destinationFolder = "${selectedDrive}:\UniqueFiles$nomDossier"
+}
 
 # Vérification de l'espace disque avant de commencer la copie
 $totalSizeRequired = ($uniqueFiles | Measure-Object -Property Length -Sum).Sum
@@ -152,6 +204,9 @@ if ($totalSizeRequired -gt $freeSpaceOnDrive) {
 }
 
 # Demandez à l'utilisateur s'il souhaite copier les fichiers uniques
+Write-Host "Espace disque suffisant pour copier les fichiers uniques." -ForegroundColor Green
+Write-Host "Nombre de fichiers avant hashage: $totalFilesBeforeHashing" -ForegroundColor Yellow
+
 $choice = Read-Host "Vous êtes sur le point de copier $totalFilesAfterHashing fichiers pour un total de $totalSizeAfterHashing MB vers $destinationFolder. Etes-vous sûr? (Oui/Non)"
 
 if ($choice -eq 'Oui') {
@@ -169,7 +224,6 @@ if ($choice -eq 'Oui') {
     }
 
     Write-Host "Copie des fichiers en cours..." -ForegroundColor Yellow
-    Start-Spinner
 
     foreach ($file in $uniqueFiles) {
         $destinationPath = Join-Path $destinationFolder $file.Name
@@ -180,7 +234,7 @@ if ($choice -eq 'Oui') {
             Write-Host "Erreur lors de la copie du fichier $($file.FullName). Ce fichier sera ignoré." -ForegroundColor Yellow
         }
     }
-    Stop-Spinner
+
     $copyMessage = "Les fichiers uniques ont été copiés dans $destinationFolder"
     Write-Host $copyMessage -ForegroundColor Green
 }
