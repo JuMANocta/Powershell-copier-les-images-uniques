@@ -41,6 +41,13 @@ function Grant-PermissionsToDrive {
     }
 }
 
+function Get-FileHashMD5 {
+    param($filePath)
+    $md5 = New-Object -TypeName System.Security.Cryptography.MD5CryptoServiceProvider
+    $hashBytes = $md5.ComputeHash([System.IO.File]::ReadAllBytes($filePath))
+    return [BitConverter]::ToString($hashBytes) -replace '-'
+}
+
 function Select-Drive {
     $externalDrives = Get-ExternalDrives
     if (-not $externalDrives) {
@@ -69,7 +76,8 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
         Write-Host "Exécution interrompue de modification des privilèges." -ForegroundColor Red
         exit
     }
-}else{
+}
+else {
     Write-Host "Ce script est exécuté avec des privilèges d'administrateur." -ForegroundColor Green
     # demander à l'utilisateur s'il souhaite changer les permissions du disque
     $response = Read-Host "Souhaitez-vous changer les permissions du disque ${selectedDrive}? (Oui/Non)"
@@ -77,7 +85,8 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
         Write-Host "Changement des permissions du disque ${selectedDrive} en cours..." -ForegroundColor Yellow
         Grant-PermissionsToDrive -driveLetter $selectedDrive
         Write-Host "Les permissions du disque ${selectedDrive} ont été modifiées." -ForegroundColor Green
-    }else{
+    }
+    else {
         Write-Host "Les permissions du disque ${selectedDrive} n'ont pas été modifiées." -ForegroundColor Yellow
     }
 }
@@ -101,31 +110,26 @@ switch ($choice) {
     'I' {
         $choixExtensions = $imageExtensions
         $nomDossier = "Images"
-        $destinationFolder = "${selectedDrive}:\UniqueFiles$nomDossier"
         break
     }
     'V' {
         $choixExtensions = $videoExtensions
         $nomDossier = "Videos"
-        $destinationFolder = "${selectedDrive}:\UniqueFiles$nomDossier"
         break
     }
     'A' {
         $choixExtensions = $audioExtensions
         $nomDossier = "Audios"
-        $destinationFolder = "${selectedDrive}:\UniqueFiles$nomDossier"
         break
     }
     'D' {
         $choixExtensions = $documentExtensions
         $nomDossier = "Documents"
-        $destinationFolder = "${selectedDrive}:\UniqueFiles$nomDossier"
         break
     }
     'T' {
         $choixExtensions = $imageExtensions + $videoExtensions + $audioExtensions
         $nomDossier = "All"
-        $destinationFolder = "${selectedDrive}:\UniqueFiles$nomDossier"
         break
     }
     default {
@@ -133,6 +137,7 @@ switch ($choice) {
         exit
     }
 }
+$destinationFolder = "${selectedDrive}:\UniqueFiles\$nomDossier"
 
 # Enregistrement de l'heure de début
 $startDateTime = Get-Date
@@ -148,9 +153,7 @@ Write-Host "Filtrage des fichiers pour ne garder que les uniques..." -Foreground
 
 $hashTable = @{}
 $uniqueFiles = $files | Where-Object {
-    $md5 = New-Object -TypeName System.Security.Cryptography.MD5CryptoServiceProvider
-    $hashBytes = $md5.ComputeHash([System.IO.File]::ReadAllBytes($_.FullName))
-    $hashString = [BitConverter]::ToString($hashBytes) -replace '-'
+    $hashString = Get-FileHashMD5 -filePath $_.FullName
 
     if ($hashTable.ContainsKey($hashString)) {
         $false
@@ -202,7 +205,12 @@ if ($choice -eq 'Oui') {
 
     Write-Host "Copie des fichiers en cours..." -ForegroundColor Yellow
 
+    $index = 0
+    $totalFiles = $uniqueFiles.Count
     foreach ($file in $uniqueFiles) {
+        $index++
+        $progress = ($index / $totalFiles) * 100
+        Write-Progress -Activity "Copie des fichiers" -Status "$index sur $totalFiles" -PercentComplete $progress
         $destinationPath = Join-Path $destinationFolder $file.Name
         try {
             Copy-Item -Path $file.FullName -Destination $destinationPath -Force
