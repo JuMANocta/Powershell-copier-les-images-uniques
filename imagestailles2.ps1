@@ -112,7 +112,7 @@ switch ($choice) {
         exit
     }
 }
-
+$startDateTime = Get-Date
 # Recherche des fichiers uniques sur le disque sélectionné
 $files = Get-ChildItem -Recurse "${selectedDrive}:" -Include $choixExtensions -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notlike "*\UniqueFiles\*" }
 
@@ -127,3 +127,43 @@ $uniqueFiles = $files | Where-Object {
         $false
     }
 }
+# Définition de l'emplacement du fichier de log
+$logFile = "log_$(Get-Date -Format 'yyyyMMdd_HHmmss').txt"
+
+# Vérification de l'espace disque disponible
+$totalSizeRequired = ($uniqueFiles | Measure-Object -Property Length -Sum).Sum
+$freeSpaceOnDrive = (Get-Volume -DriveLetter $selectedDrive).SizeRemaining
+if ($totalSizeRequired -gt $freeSpaceOnDrive) {
+    Write-Host "Espace insuffisant sur le disque. Exécution interrompue." -ForegroundColor Red
+    exit
+}
+
+# Copie des fichiers uniques dans le dossier de destination
+if (-not (Test-Path $destinationFolder)) {
+    New-Item -Path $destinationFolder -ItemType Directory
+}
+foreach ($file in $uniqueFiles) {
+    $destinationPath = Join-Path $destinationFolder $file.Name
+    try {
+        Copy-Item -Path $file.FullName -Destination $destinationPath -Force
+    }
+    catch {
+        Write-Host "Erreur lors de la copie du fichier $($file.FullName)." -ForegroundColor Yellow
+    }
+}
+
+# Enregistrement du log
+$endDateTime = Get-Date
+$duration = $endDateTime - $startDateTime
+$logContent = @"
+Date et heure de début: $startDateTime
+Nombre de fichiers uniques copiés: $($uniqueFiles.Count)
+Durée d'exécution: $duration
+Emplacement des fichiers copiés: $destinationFolder
+"@
+
+Add-Content -Path $logFile -Value $logContent
+
+# Affichage des informations finales
+Write-Host "Copie terminée. Les fichiers uniques ont été copiés dans $destinationFolder" -ForegroundColor Green
+Write-Host "Détails enregistrés dans le fichier de log : $logFile" -ForegroundColor Green
