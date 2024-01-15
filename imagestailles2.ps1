@@ -66,6 +66,35 @@ function Select-Drive {
     }
 }
 
+function Get-UniqueFiles($files, $hashTable) {
+    return $files | Where-Object {
+        $hashString = Get-FileHashMD5 -filePath $_.FullName
+
+        if ($hashTable.ContainsKey($hashString)) {
+            $false
+        }
+        else {
+            $hashTable[$hashString] = $true
+            $true
+        }
+    }
+}
+
+function Get-TotalSize($uniqueFiles) {
+    $totalSize = ($uniqueFiles | Measure-Object -Property Length -Sum).Sum / 1MB
+    Write-Host "Total size after hashing: $totalSize MB"
+    return $totalSize
+}
+
+function AskForDestinationChange() {
+    $choice = Read-Host "Souhaitez-vous changer le disque de destination? (Oui/Non)"
+    if ($choice -eq 'Oui') {
+        $selectedDrive = Select-Drive
+        return "${selectedDrive}:\UniqueFiles$nomDossier"
+    }
+    return $null
+}
+
 $selectedDrive = Select-Drive
 
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -152,26 +181,15 @@ $totalSizeBeforeHashing = ($files | Measure-Object -Property Length -Sum).Sum / 
 Write-Host "Filtrage des fichiers pour ne garder que les uniques..." -ForegroundColor Yellow
 
 $hashTable = @{}
-$uniqueFiles = $files | Where-Object {
-    $hashString = Get-FileHashMD5 -filePath $_.FullName
-
-    if ($hashTable.ContainsKey($hashString)) {
-        $false
-    }
-    else {
-        $hashTable[$hashString] = $true
-        $true
-    }
-}
-
+$uniqueFiles = Get-UniqueFiles $files $hashTable
 $totalFilesAfterHashing = $uniqueFiles.Count
-$totalSizeAfterHashing = ($uniqueFiles | Measure-Object -Property Length -Sum).Sum / 1MB
+Write-Host "Total files after hashing: $totalFilesAfterHashing"
 
-# Demander à l'utilisateur si il souhaite changer le disque de destination
-$choice = Read-Host "Souhaitez-vous changer le disque de destination? (Oui/Non)"
-if ($choice -eq 'Oui') {
-    $selectedDrive = Select-Drive
-    $destinationFolder = "${selectedDrive}:\UniqueFiles$nomDossier"
+$totalSizeAfterHashing = Get-TotalSize $uniqueFiles
+
+$destinationFolder = AskForDestinationChange
+if ($destinationFolder -ne $null) {
+    $totalSizeRequired = Get-TotalSize $uniqueFiles
 }
 
 # Vérification de l'espace disque avant de commencer la copie
