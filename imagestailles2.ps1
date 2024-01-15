@@ -38,3 +38,47 @@ function Select-Drive {
         exit
     }
 }
+# Fonction pour accorder des permissions sur un disque
+function Grant-PermissionsToDrive {
+    param($driveLetter)
+    
+    # Confirmation avant de changer les permissions
+    $confirmChangePermission = Read-Host "Etes-vous sûr de vouloir changer les permissions de ${driveLetter}? (Oui/Non)"
+    if ($confirmChangePermission -ne 'Oui') {
+        Write-Host "Modification des permissions annulée par l'utilisateur." -ForegroundColor Yellow
+        return
+    }
+
+    # Vérifie si le module NTFSSecurity est installé, sinon l'installe
+    if (-not (Get-Module -ListAvailable -Name NTFSSecurity)) {
+        Write-Host "Le module NTFSSecurity est nécessaire pour continuer. Installation en cours..." -ForegroundColor Yellow
+        Install-Module -Name NTFSSecurity -Confirm:$false -Force
+    }
+
+    # Gestion d'erreur lors de l'installation du module
+    if (-not (Get-Module -ListAvailable -Name NTFSSecurity)) {
+        Write-Host "Echec de l'installation du module NTFSSecurity. Exécution interrompue." -ForegroundColor Red
+        return
+    }
+
+    # Essayer d'accorder les permissions et gérer les erreurs potentielles
+    try {
+        Add-NTFSAccess -Path "${driveLetter}:\\" -Account $env:USERNAME -AccessRights FullControl -AppliesTo ThisFolderSubfoldersAndFiles
+        Write-Host "Permissions accordées avec succès." -ForegroundColor Green
+    }
+    catch {
+        Write-Host "Erreur lors de l'octroi des permissions. Exécution interrompue." -ForegroundColor Red
+    }
+}
+
+# Vérification des privilèges d'administration
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "Attention: Ce script n'est pas exécuté avec des privilèges d'administrateur." -ForegroundColor Yellow
+    $response = Read-Host "Souhaitez-vous continuer malgré cela? (Oui/Non)"
+    if ($response -ne 'Oui') {
+        Write-Host "Exécution interrompue de modification des privilèges." -ForegroundColor Red
+        exit
+    }
+} else {
+    Write-Host "Ce script est exécuté avec des privilèges d'administrateur." -ForegroundColor Green
+}
