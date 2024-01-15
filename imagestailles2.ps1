@@ -82,3 +82,48 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 } else {
     Write-Host "Ce script est exécuté avec des privilèges d'administrateur." -ForegroundColor Green
 }
+# Fonction pour calculer le hash MD5 d'un fichier (déjà définie précédemment)
+function Get-FileHashMD5 {
+    param($filePath)
+    $md5 = New-Object -TypeName System.Security.Cryptography.MD5CryptoServiceProvider
+    $hashBytes = $md5.ComputeHash([System.IO.File]::ReadAllBytes($filePath))
+    return [BitConverter]::ToString($hashBytes) -replace '-'
+}
+
+# Sélection du disque par l'utilisateur
+$selectedDrive = Select-Drive
+
+# Définition des extensions de fichiers pour les différents types de médias
+$imageExtensions = @("*.jpg", "*.jpeg", "*.png", "*.gif", "*.bmp")
+$videoExtensions = @("*.mp4", "*.avi", "*.mov", "*.mkv")
+$audioExtensions = @("*.mp3", "*.wav", "*.aac", "*.flac")
+$documentExtensions = @("*.doc", "*.docx", "*.pdf", "*.txt", "*.xlsx", "*.pptx")
+
+# Choix du type de fichiers à copier
+$choice = Read-Host "Quel type de fichiers souhaitez-vous copier? (Images(I)/Videos(V)/Audios(A)/Documents(D)/Tous(T))"
+switch ($choice) {
+    'I' { $choixExtensions = $imageExtensions }
+    'V' { $choixExtensions = $videoExtensions }
+    'A' { $choixExtensions = $audioExtensions }
+    'D' { $choixExtensions = $documentExtensions }
+    'T' { $choixExtensions = $imageExtensions + $videoExtensions + $audioExtensions + $documentExtensions }
+    default {
+        Write-Host "Choix invalide. Exécution interrompue." -ForegroundColor Red
+        exit
+    }
+}
+
+# Recherche des fichiers uniques sur le disque sélectionné
+$files = Get-ChildItem -Recurse "${selectedDrive}:" -Include $choixExtensions -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notlike "*\UniqueFiles\*" }
+
+$hashTable = @{}
+$uniqueFiles = $files | Where-Object {
+    $hashString = Get-FileHashMD5 -filePath $_.FullName
+    if (-not $hashTable.ContainsKey($hashString)) {
+        $hashTable[$hashString] = $true
+        $true
+    }
+    else {
+        $false
+    }
+}
