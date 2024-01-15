@@ -216,7 +216,7 @@ if ($choice -eq 'Oui') {
             Copy-Item -Path $file.FullName -Destination $destinationPath -Force
         }
         catch {
-            Write-Host "Erreur lors de la copie du fichier $($file.FullName). Ce fichier sera ignoré." -ForegroundColor Yellow
+            Write-Host "Erreur lors de la copie du fichier $($file.FullName). Chemin: $($file.FullName). Ce fichier sera ignoré." -ForegroundColor Yellow
         }
     }
 
